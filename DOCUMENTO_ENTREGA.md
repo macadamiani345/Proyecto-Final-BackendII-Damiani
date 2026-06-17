@@ -827,139 +827,114 @@ Si un administrador cambia el rol de un usuario en la base de datos (por ejemplo
 
 > **Nota**: Las siguientes capturas muestran las pruebas realizadas con Postman contra el servidor local en `http://localhost:8080`.
 
-#### Registro exitoso
+#### 5.1.1 Registro de usuario — `POST /api/v1/auth/register` → 201 Created
+
+Se envía un request POST con los datos del nuevo usuario (first_name, last_name, email, password) en formato JSON. El servidor valida que el email no esté duplicado, hashea la password con bcrypt y crea el documento en MongoDB. La respuesta retorna el usuario creado sin incluir la password.
+
+**[INSERTAR CAPTURA DE POSTMAN — Registro exitoso]**
+
+---
+
+#### 5.1.2 Login local — `POST /api/v1/auth/login` → 200 OK
+
+Se envían las credenciales (email, password). Passport Local Strategy busca el usuario y compara la password con bcrypt. Si es válida, se genera un JWT con `{ userId, role }` y expiración de 1 hora. El token se envía tanto en el body de la respuesta como en una cookie `authToken` con flags de seguridad.
+
+**[INSERTAR CAPTURA DE POSTMAN — Login exitoso]**
+
+---
+
+#### 5.1.3 Ruta protegida con token — `GET /api/v1/profile` → 200 OK
+
+Se accede a la ruta protegida enviando el JWT en el header `Authorization: Bearer <token>`. El middleware `authMiddleware` verifica y decodifica el token, extrae el `userId` y retorna los datos del perfil del usuario autenticado.
+
+**[INSERTAR CAPTURA DE POSTMAN — Profile con token]**
+
+---
+
+#### 5.1.4 Ruta protegida sin token — `GET /api/v1/profile` → 401 Unauthorized
+
+Se accede a la misma ruta sin enviar token (sin header Authorization ni cookie). El middleware detecta la ausencia de credenciales y retorna un error 401, demostrando que la ruta está correctamente protegida.
+
+**[INSERTAR CAPTURA DE POSTMAN — Profile sin token (401)]**
+
+---
+
+#### 5.1.5 Ruta admin con rol user — `GET /api/v1/admin` → 403 Forbidden
+
+Se accede a la ruta de administración con un token de usuario que tiene rol `"user"`. El `authMiddleware` valida el token correctamente (no es un 401), pero el `roleMiddleware` detecta que el rol no es `"admin"` y retorna un error 403, diferenciando claramente entre "no autenticado" y "no autorizado".
+
+**[INSERTAR CAPTURA DE POSTMAN — Admin con rol user (403)]**
+
+---
+
+#### 5.1.6 Ruta admin con rol admin — `GET /api/v1/admin` → 200 OK
+
+Se accede a la misma ruta con un token de usuario que tiene rol `"admin"`. Ambos middlewares (autenticación y autorización) pasan correctamente y se retorna el panel de administración con datos como el total de usuarios registrados.
+
+**[INSERTAR CAPTURA DE POSTMAN — Admin con rol admin (200)]**
+
+---
+
+#### 5.1.7 Logout — `POST /api/v1/auth/logout` → 200 OK
+
+Se ejecuta el logout que realiza tres acciones: destruye la sesión server-side en MongoDB (`req.session.destroy()`), limpia la cookie de sesión (`connect.sid`) y limpia la cookie del JWT (`authToken`). Después de esto, cualquier request posterior sin re-autenticarse recibirá un 401.
+
+**[INSERTAR CAPTURA DE POSTMAN — Logout exitoso]**
+
+---
+
+### 5.2 Token JWT Real Generado
+
+El siguiente es un token JWT real generado por el sistema durante el login:
+
+**Token:**
 ```
-POST http://localhost:8080/api/v1/auth/register
-Body (JSON):
-{
-  "first_name": "Juan",
-  "last_name": "Pérez",
-  "email": "juan@example.com",
-  "password": "MiPassword123"
-}
-
-→ Response: 201 Created
-{
-  "status": "success",
-  "message": "Usuario registrado exitosamente.",
-  "payload": { ... }
-}
-```
-
-#### Login exitoso
-```
-POST http://localhost:8080/api/v1/auth/login
-Body (JSON):
-{
-  "email": "juan@example.com",
-  "password": "MiPassword123"
-}
-
-→ Response: 200 OK
-{
-  "status": "success",
-  "message": "Login exitoso.",
-  "token": "eyJhbGciOiJIUzI1NiIs...",
-  "payload": { ... }
-}
-
-→ Cookie seteada: authToken=eyJhbGciOiJIUzI1NiIs...; HttpOnly; SameSite=Lax
-```
-
-#### Ruta protegida (/profile)
-```
-GET http://localhost:8080/api/v1/profile
-Headers: Authorization: Bearer eyJhbGciOiJIUzI1NiIs...
-
-→ Response: 200 OK
-{
-  "status": "success",
-  "payload": {
-    "first_name": "Juan",
-    "email": "juan@example.com",
-    "role": "user"
-  }
-}
-```
-
-#### Ruta protegida sin token (401)
-```
-GET http://localhost:8080/api/v1/profile
-(sin Authorization header ni cookie)
-
-→ Response: 401 Unauthorized
-{
-  "status": "error",
-  "message": "No autenticado. Se requiere un token válido."
-}
-```
-
-#### Ruta admin con rol user (403)
-```
-GET http://localhost:8080/api/v1/admin
-Headers: Authorization: Bearer <token_de_usuario_con_role_user>
-
-→ Response: 403 Forbidden
-{
-  "status": "error",
-  "message": "No autorizado. No tenés permisos para acceder a este recurso."
-}
-```
-
-#### Ruta admin con rol admin (200)
-```
-GET http://localhost:8080/api/v1/admin
-Headers: Authorization: Bearer <token_de_usuario_con_role_admin>
-
-→ Response: 200 OK
-{
-  "status": "success",
-  "message": "Bienvenido al panel de administración.",
-  "payload": { ... }
-}
-```
-
-#### Logout
-```
-POST http://localhost:8080/api/v1/auth/logout
-
-→ Response: 200 OK
-{
-  "status": "success",
-  "message": "Logout exitoso. Sesión destruida y cookies limpiadas."
-}
-```
-
-### 5.2 Ejemplo de Token JWT Real
-
-**Token generado:**
-```
-eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiI2ODM5YWJjMTIzNGRlZjU2Nzg5MDEyMzQiLCJyb2xlIjoidXNlciIsImlhdCI6MTcxODM2NDAwMCwiZXhwIjoxNzE4MzY3NjAwfQ.sG8Yf2kLm9X5z_QwR7vN3pA
+eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiI2YTMyOTgwNWRkYzI2YzdhN2Y3NzY3YTMiLCJyb2xlIjoidXNlciIsImlhdCI6MTc4MTcwMDYzOSwiZXhwIjoxNzgxNzA0MjM5fQ.3bJGow6vNbj6mBaolKf5GRd3ON_tJltwevqsrVgQ6fg
 ```
 
 **Payload decodificado (jwt.io):**
 ```json
 {
-  "userId": "6839abc1234def5678901234",
+  "userId": "6a329805ddc26c7a7f7767a3",
   "role": "user",
-  "iat": 1718364000,
-  "exp": 1718367600
+  "iat": 1781700639,
+  "exp": 1781704239
 }
 ```
-- `iat`: Fecha de emisión (issued at)
-- `exp`: Fecha de expiración (1 hora después)
+- `userId`: ID del documento en MongoDB
+- `role`: Rol del usuario, usado para autorización
+- `iat` (issued at): Timestamp de emisión del token
+- `exp` (expires): Timestamp de expiración (exactamente 1 hora después de `iat`)
+
+**[INSERTAR CAPTURA DE jwt.io — Token decodificado]**
+
+---
 
 ### 5.3 Cookie Configurada Correctamente
 
+Al realizar el login, el servidor envía dos headers `Set-Cookie` en la respuesta:
+
+**Cookie 1 — Sesión (`connect.sid`):**
 ```
-Set-Cookie: authToken=eyJhbGciOiJIUzI1NiIs...;
-  Path=/;
-  HttpOnly;          ← No accesible desde JavaScript
-  SameSite=Lax;      ← Protección CSRF
-  Max-Age=3600       ← 1 hora
+Set-Cookie: connect.sid=s%3A...; Path=/; HttpOnly; SameSite=Lax
+```
+Esta cookie identifica la sesión server-side almacenada en MongoDB a través de connect-mongo.
+
+**Cookie 2 — Token JWT (`authToken`):**
+```
+Set-Cookie: authToken=eyJhbGciOiJIUzI1NiIs...; Path=/; HttpOnly; SameSite=Lax; Max-Age=3600
 ```
 
-> En producción se agrega el flag `Secure`, que requiere HTTPS.
+| Flag | Valor | Propósito |
+|---|---|---|
+| `HttpOnly` | `true` | No accesible desde JavaScript del cliente (previene XSS) |
+| `SameSite` | `Lax` | Protección contra ataques CSRF |
+| `Secure` | Solo en producción | Requiere HTTPS para enviar la cookie |
+| `Max-Age` | `3600` (1 hora) | Tiempo de vida de la cookie |
+
+**[INSERTAR CAPTURA DE POSTMAN — Headers de respuesta mostrando Set-Cookie]**
+
+> En producción (`NODE_ENV=production`) se agrega automáticamente el flag `Secure`, que exige HTTPS.
 
 ---
 
